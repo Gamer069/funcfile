@@ -19,6 +19,13 @@ impl Volume {
         let gb_total = disk.total_space() as f32 / 1_073_741_824f32;
         let gb_used = gb_total - gb_left;
         let disk_type = disk.kind();
-        Self { disk_type, name, mount_point, gb_left, gb_total, gb_used }
+        Self {
+            disk_type,
+            name,
+            mount_point,
+            gb_left,
+            gb_total,
+            gb_used,
+        }
     }
 }

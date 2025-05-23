@@ -1,7 +1,7 @@
+use crate::fs::Volume;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use sysinfo::Disks;
-use crate::fs::Volume;
 
 #[derive(Clone)]
 pub(crate) enum Screen {

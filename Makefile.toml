@@ -1,0 +1,18 @@
+[tasks.build]
+description = "Build funcfile"
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.dev]
+description = "Build funcfile (dev)"
+command = "cargo"
+args = ["build", ""]
+
+[tasks.copy]
+description = "Copy neccessary files"
+command = "cp"
+args = ["hires/*", "target/debug/"]
+
+[tasks.all]
+description = "Build funcfile and copy neccessary files"
+dependencies = ["build", "copy"]
