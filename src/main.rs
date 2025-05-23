@@ -109,6 +109,11 @@ impl FuncFile {
         let mut back = false;
         ui.horizontal(|ui| {
             if let Screen::FileBrowse(_, ref mut cur) = self.screen {
+                if cur.parent().is_some() {
+                    if ui.button("..\\").clicked() {
+                        *cur = cur.parent().unwrap().to_path_buf();
+                    }
+                }
                 if ui.button("Back to drive sel").clicked() {
                     let disks = Disks::new_with_refreshed_list();
                     let mut volumes = vec![];
@@ -117,11 +122,6 @@ impl FuncFile {
                     }
                     self.screen = Screen::DriveSel(volumes, Arc::new(Mutex::new(disks)));
                     back = true;
-                }
-                if cur.parent().is_some() {
-                    if ui.button("..\\").clicked() {
-                        *cur = cur.parent().unwrap().to_path_buf();
-                    }
                 }
             }
         });
