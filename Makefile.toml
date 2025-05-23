@@ -16,3 +16,7 @@ args = ["hires/*", "target/debug/"]
 [tasks.all]
 description = "Build funcfile and copy neccessary files"
 dependencies = ["build", "copy"]
+
+[tasks.all_dev]
+description = "Build funcfile (dev) and copy neccessary files"
+dependencies = ["dev", "copy"]
