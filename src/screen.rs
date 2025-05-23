@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use sysinfo::Disks;

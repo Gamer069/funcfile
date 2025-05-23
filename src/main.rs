@@ -1,13 +1,10 @@
 mod fs;
 mod screen;
 
-use std::cell::RefCell;
-use std::fs::File;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
-use eframe::egui::{Id, PointerButton, PopupCloseBehavior, Ui, Window};
-use eframe::egui::debug_text::print;
+use eframe::egui::{Id, Image, PointerButton, PopupCloseBehavior, TextureOptions, Ui, Window};
+use eframe::epaint::{TextureId, Vec2};
 use sysinfo::Disks;
 use crate::fs::Volume;
 use crate::screen::Screen;
@@ -20,16 +17,20 @@ fn main() {
 struct FuncFile {
     screen: Screen,
     failed_to_delete: bool,
+    failed_to_open: bool,
+    dir_tex: Option<Image<'static>>,
+    file_tex: Option<Image<'static>>
 }
 
 impl FuncFile {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let disks = Disks::new_with_refreshed_list();
         let mut volumes = vec![];
         for disk in &disks {
             volumes.push(Volume::from(disk));
         }
-        Self { screen: Screen::DriveSel(volumes, Arc::new(Mutex::new(disks))), failed_to_delete: false }
+        let out = Self { screen: Screen::DriveSel(volumes, Arc::new(Mutex::new(disks))), failed_to_delete: false, failed_to_open: false, dir_tex: None, file_tex: None };
+        out
     }
     fn refresh_drive_sel(&mut self) {
         match self.screen {
@@ -48,7 +49,7 @@ impl FuncFile {
     }
     fn drive_sel(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         let volumes = match self.screen.clone() {
-            Screen::DriveSel(vols, disks) => vols,
+            Screen::DriveSel(vols, _disks) => vols,
             _ => return,
         };
         for vol in volumes {
@@ -106,6 +107,19 @@ impl FuncFile {
                 });
         }
 
+        if self.failed_to_open {
+            Window::new("Error")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("Failed to open file/directory. Perhaps you don't have permission?");
+                    if ui.button("OK").clicked() {
+                        self.failed_to_open = false;
+                    }
+                });
+        }
+
         let mut back = false;
         ui.horizontal(|ui| {
             if let Screen::FileBrowse(_, ref mut cur) = self.screen {
@@ -127,59 +141,80 @@ impl FuncFile {
         });
         if back { return; }
 
-        let (volume, path) = if let Screen::FileBrowse(vol, path) = self.screen.clone() { (vol, path) } else { return };
-        let entries = std::fs::read_dir(path.clone());
+        let (_, path) = if let Screen::FileBrowse(vol, path) = self.screen.clone() { (vol, path) } else { return };
+        let mut entries = std::fs::read_dir(path.clone());
+        if entries.is_err() {
+            self.failed_to_open = true;
+        }
         while entries.is_err() {
             if let Screen::FileBrowse(_, ref mut cur) = self.screen {
                 *cur = path.parent().unwrap().to_path_buf();
+                entries = std::fs::read_dir(cur.clone());
             }
         }
-        for (i, f) in entries.unwrap().enumerate() {
-            let id = Id::new(format!("ctx_menu{}", i));
+        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            for (i, f) in entries.unwrap().enumerate() {
+                let id = Id::new(format!("ctx_menu{}", i));
 
-            if f.is_err() {
-                continue;
-            }
-            let path = f.unwrap().path();
-            let btn = ui.button(format!("{}", path.display()));
-            if btn.clicked() {
-                if path.is_dir() {
-                    if let Screen::FileBrowse(_, ref mut cur) = self.screen {
-                        *cur = path.clone();
-                    }
-                } else {
-                    open::that_detached(path.to_str().unwrap()).expect("Failed to open file");
+                if f.is_err() {
+                    continue;
                 }
-            }
+                let path = f.unwrap().path();
+                let btn = ui.add(egui::Button::image_and_text(self.dir_tex.clone().unwrap(), format!("{}", path.display())));
 
-            if btn.secondary_clicked() {
-                ui.memory_mut(|mem| {
-                    mem.toggle_popup(id);
-                });
-            }
-
-            egui::popup::popup_below_widget(ui, id, &btn, PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                if ui.button("Delete").clicked() {
-                    if path.is_file() {
-                        ui.close_menu();
-                        if std::fs::remove_file(path.clone()).is_err() {
-                            self.failed_to_delete = true;
+                if btn.clicked() {
+                    if path.is_dir() {
+                        if let Screen::FileBrowse(_, ref mut cur) = self.screen {
+                            *cur = path.clone();
                         }
                     } else {
-                        ui.close_menu();
-                        if std::fs::remove_dir_all(path.clone()).is_err() {
-                            self.failed_to_delete = true;
-                        }
+                        open::that_detached(path.to_str().unwrap()).expect("Failed to open file");
                     }
                 }
-            });
-        }
+
+                if btn.secondary_clicked() {
+                    ui.memory_mut(|mem| {
+                        mem.toggle_popup(id);
+                    });
+                }
+
+                egui::popup::popup_below_widget(ui, id, &btn, PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                    if ui.button("Delete").clicked() {
+                        if path.is_file() {
+                            ui.close_menu();
+                            if std::fs::remove_file(path.clone()).is_err() {
+                                self.failed_to_delete = true;
+                            }
+                        } else {
+                            ui.close_menu();
+                            if std::fs::remove_dir_all(path.clone()).is_err() {
+                                self.failed_to_delete = true;
+                            }
+                        }
+                    }
+                });
+            }
+        });
     }
 }
 
 impl eframe::App for FuncFile {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.refresh_drive_sel();
+        if self.dir_tex.is_none() {
+            let dir_bytes = std::fs::read(std::env::current_exe().unwrap().parent().unwrap().join("dir.png")).expect("Failed to read dir image bytes");
+            let img = image::load_from_memory(&dir_bytes).expect("Failed to load dir image");
+            let rgba = img.to_rgba8();
+            let size = [rgba.width() as usize, rgba.height() as usize];
+            let pixels = rgba.as_flat_samples();
+
+            let color_image = egui::ColorImage::from_rgba_premultiplied(
+                size,
+                pixels.as_slice(),
+            );
+
+            self.dir_tex = Some(egui::Image::new(&ctx.load_texture("dir_image", color_image, TextureOptions::default())).fit_to_original_size(0.01));
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             self.drive_sel(ctx, ui);
             self.file_browse(ctx, ui);
