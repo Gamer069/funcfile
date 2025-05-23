@@ -4,7 +4,8 @@ mod screen;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::egui::{Id, Image, PointerButton, PopupCloseBehavior, TextureOptions, Ui, Window};
-use eframe::epaint::{TextureId, Vec2};
+use eframe::epaint::{TextureHandle, TextureId, Vec2};
+use image::imageops::FilterType;
 use sysinfo::Disks;
 use crate::fs::Volume;
 use crate::screen::Screen;
@@ -18,8 +19,8 @@ struct FuncFile {
     screen: Screen,
     failed_to_delete: bool,
     failed_to_open: bool,
-    dir_tex: Option<Image<'static>>,
-    file_tex: Option<Image<'static>>
+    dir_tex: Option<TextureHandle>,
+    file_tex: Option<TextureHandle>
 }
 
 impl FuncFile {
@@ -160,7 +161,8 @@ impl FuncFile {
                     continue;
                 }
                 let path = f.unwrap().path();
-                let btn = ui.add(egui::Button::image_and_text(self.dir_tex.clone().unwrap(), format!("{}", path.display())));
+                let img = if path.is_dir() { &self.dir_tex.clone().unwrap() } else { &self.file_tex.clone().unwrap() };
+                let btn = ui.add(egui::Button::image_and_text(img, format!("{}", path.display())).min_size(Vec2::new(ui.available_width(), 0.0)));
 
                 if btn.clicked() {
                     if path.is_dir() {
@@ -203,7 +205,7 @@ impl eframe::App for FuncFile {
         self.refresh_drive_sel();
         if self.dir_tex.is_none() {
             let dir_bytes = std::fs::read(std::env::current_exe().unwrap().parent().unwrap().join("dir.png")).expect("Failed to read dir image bytes");
-            let img = image::load_from_memory(&dir_bytes).expect("Failed to load dir image");
+            let img = image::load_from_memory(&dir_bytes).expect("Failed to load dir image").resize(50, 50, FilterType::Nearest);
             let rgba = img.to_rgba8();
             let size = [rgba.width() as usize, rgba.height() as usize];
             let pixels = rgba.as_flat_samples();
@@ -213,7 +215,21 @@ impl eframe::App for FuncFile {
                 pixels.as_slice(),
             );
 
-            self.dir_tex = Some(egui::Image::new(&ctx.load_texture("dir_image", color_image, TextureOptions::default())).fit_to_original_size(0.01));
+            self.dir_tex = Some(ctx.load_texture("dir_image", color_image, TextureOptions::default()));
+        }
+        if self.file_tex.is_none() {
+            let file_bytes = std::fs::read(std::env::current_exe().unwrap().parent().unwrap().join("file.png")).expect("Failed to read file image bytes");
+            let img = image::load_from_memory(&file_bytes).expect("Failed to load file image").resize(50, 50, FilterType::Nearest);
+            let rgba = img.to_rgba8();
+            let size = [rgba.width() as usize, rgba.height() as usize];
+            let pixels = rgba.as_flat_samples();
+
+            let color_image = egui::ColorImage::from_rgba_premultiplied(
+                size,
+                pixels.as_slice(),
+            );
+
+            self.file_tex = Some(ctx.load_texture("file_image", color_image, TextureOptions::default()));
         }
         egui::CentralPanel::default().show(ctx, |ui| {
             self.drive_sel(ctx, ui);
