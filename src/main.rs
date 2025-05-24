@@ -25,19 +25,25 @@ fn main() {
 }
 
 struct FuncFile {
+    /// SCREEN
     screen: Screen,
-    last_name: String,
+
+    /// POPUPS
     cached_name: String,
     failed_to_delete: bool,
     failed_to_open: bool,
     failed_to_read_copied_file: bool,
     create_popup: bool,
+    create_dir_popup: bool,
+
+    /// TEXTURES
     dir_tex: Option<TextureHandle>,
     file_tex: Option<TextureHandle>,
     paste_tex: Option<TextureHandle>,
     back_tex: Option<TextureHandle>,
     drive_sel_tex: Option<TextureHandle>,
     create_tex: Option<TextureHandle>,
+    create_dir_tex: Option<TextureHandle>,
 }
 
 impl FuncFile {
@@ -49,18 +55,20 @@ impl FuncFile {
         }
         Self {
             screen: Screen::DriveSel(volumes, Arc::new(Mutex::new(disks))),
-            last_name: "".to_owned(),
             cached_name: "".to_owned(),
             failed_to_delete: false,
             failed_to_open: false,
             failed_to_read_copied_file: false,
             create_popup: false,
+            create_dir_popup: false,
+
             dir_tex: None,
             file_tex: None,
             paste_tex: None,
             back_tex: None,
             drive_sel_tex: None,
             create_tex: None,
+            create_dir_tex: None,
         }
     }
     fn refresh_drive_sel(&mut self) {
@@ -181,7 +189,7 @@ impl FuncFile {
                         .resizable(false)
                         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                         .show(ctx, |ui| {
-                            ui.label("Enter a name for this item!");
+                            ui.label("Enter a name for this file!");
 
                             ui.text_edit_singleline(&mut self.cached_name);
 
@@ -189,6 +197,24 @@ impl FuncFile {
                                 File::create(cur.join(self.cached_name.clone())).expect("Failed to create file");
                                 self.cached_name = "".to_owned();
                                 self.create_popup = false;
+                            }
+                        });
+                }
+
+                if self.create_dir_popup {
+                    Window::new("Create")
+                        .collapsible(false)
+                        .resizable(false)
+                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                        .show(ctx, |ui| {
+                            ui.label("Enter a name for this directory!");
+
+                            ui.text_edit_singleline(&mut self.cached_name);
+
+                            if ui.button("OK").clicked() {
+                                std::fs::create_dir(cur.join(self.cached_name.clone())).expect("Failed to create file");
+                                self.cached_name = "".to_owned();
+                                self.create_dir_popup = false;
                             }
                         });
                 }
@@ -226,6 +252,9 @@ impl FuncFile {
                 }
                 if ui.add(egui::Button::image(&self.create_tex.clone().unwrap())).clicked() {
                     self.create_popup = true;
+                }
+                if ui.add(egui::Button::image(&self.create_dir_tex.clone().unwrap())).clicked() {
+                    self.create_dir_popup = true;
                 }
 
                 let edit = ui.add(
@@ -350,6 +379,7 @@ impl eframe::App for FuncFile {
         screen::load_image!(self, "back.png", "back_image", back_tex, ctx);
         screen::load_image!(self, "drive_sel.png", "drive_sel_image", drive_sel_tex, ctx);
         screen::load_image!(self, "create.png", "create_image", create_tex, ctx);
+        screen::load_image!(self, "create_dir.png", "create_dir_image", create_dir_tex, ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.drive_sel(ctx, ui);
