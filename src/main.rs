@@ -6,7 +6,7 @@ mod screen;
 
 use crate::fs::Volume;
 use crate::screen::Screen;
-use eframe::egui;
+use eframe::egui::{self, FontId};
 use eframe::egui::{Id, PointerButton, PopupCloseBehavior, Ui, Window};
 use eframe::epaint::{TextureHandle, Vec2};
 use std::path::Path;
@@ -163,6 +163,7 @@ impl FuncFile {
                 if cur.parent().is_some() {
                     if ui.add(egui::Button::image(&self.back_tex.clone().unwrap())).clicked() {
                         *cur = cur.parent().unwrap().to_path_buf();
+                        *cached = cur.to_str().unwrap().to_string();
                     }
                 }
                 if ui.add(egui::Button::image(&self.paste_tex.clone().unwrap())).clicked() {
@@ -190,7 +191,14 @@ impl FuncFile {
                     back = true;
                     return;
                 }
-                let edit = ui.text_edit_singleline(cached);
+                let edit = ui.add(
+                    egui::TextEdit::singleline(cached)
+                        .min_size(Vec2 { 
+                            x: ui.available_width(), 
+                            y: ui.available_height() 
+                        })
+                        .font(FontId::new(20.0, egui::FontFamily::Proportional))
+                    );
                 if edit.lost_focus() {
                     let cached_path = Path::new(cached);
                     if cached_path.is_dir() {
