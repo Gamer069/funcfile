@@ -6,7 +6,7 @@ use sysinfo::Disks;
 #[derive(Clone)]
 pub(crate) enum Screen {
     DriveSel(Vec<Volume>, Arc<Mutex<Disks>>),
-    FileBrowse(Volume, PathBuf),
+    FileBrowse(Volume, PathBuf, String),
 }
 
 pub macro load_image($self:ident,$image_name:literal,$image_id:literal,$texture_handle_var_name:ident,$ctx:ident) {

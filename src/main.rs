@@ -6,10 +6,10 @@ mod screen;
 
 use crate::fs::Volume;
 use crate::screen::Screen;
-use eframe::egui::{self, Button, TextEdit};
+use eframe::egui;
 use eframe::egui::{Id, PointerButton, PopupCloseBehavior, Ui, Window};
 use eframe::epaint::{TextureHandle, Vec2};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use sysinfo::Disks;
 
@@ -108,7 +108,7 @@ impl FuncFile {
                 if drive_group.response.hovered()
                     && ctx.input(|i| i.pointer.button_clicked(PointerButton::Primary))
                 {
-                    self.screen = Screen::FileBrowse(vol.clone(), vol.mount_point);
+                    self.screen = Screen::FileBrowse(vol.clone(), vol.mount_point.clone(), vol.mount_point.to_str().unwrap().to_owned());
                 }
             }
         }
@@ -159,13 +159,13 @@ impl FuncFile {
 
         let mut back = false;
         ui.horizontal(|ui| {
-            if let Screen::FileBrowse(_, ref mut cur) = self.screen {
+            if let Screen::FileBrowse(_, ref mut cur, ref mut cached) = self.screen {
                 if cur.parent().is_some() {
-                    if ui.add(Button::image(&self.back_tex.clone().unwrap())).clicked() {
+                    if ui.add(egui::Button::image(&self.back_tex.clone().unwrap())).clicked() {
                         *cur = cur.parent().unwrap().to_path_buf();
                     }
                 }
-                if ui.add(Button::image(&self.paste_tex.clone().unwrap())).clicked() {
+                if ui.add(egui::Button::image(&self.paste_tex.clone().unwrap())).clicked() {
                     let copied_path = clip::paste();
                     let copied_path = copied_path.trim().to_string();
                     println!("{}", copied_path);
@@ -180,7 +180,7 @@ impl FuncFile {
                     }
                 }
 
-                if ui.add(Button::image(&self.drive_sel_tex.clone().unwrap())).clicked() {
+                if ui.add(egui::Button::image(&self.drive_sel_tex.clone().unwrap())).clicked() {
                     let disks = Disks::new_with_refreshed_list();
                     let mut volumes = vec![];
                     for disk in &disks {
@@ -188,14 +188,25 @@ impl FuncFile {
                     }
                     self.screen = Screen::DriveSel(volumes, Arc::new(Mutex::new(disks)));
                     back = true;
+                    return;
                 }
+                let edit = ui.text_edit_singleline(cached);
+                if edit.lost_focus() {
+                    let cached_path = Path::new(cached);
+                    if cached_path.is_dir() {
+                        *cur = (*cached_path).to_path_buf();
+                    } else if cached_path.is_file() {
+                        open::that_detached(cached_path).expect("Failed to open file");
+                        *cached = cur.to_str().unwrap().to_owned();
+                    }
+                };
             }
         });
         if back {
             return;
         }
 
-        let (_, path) = if let Screen::FileBrowse(vol, path) = self.screen.clone() {
+        let (_, path) = if let Screen::FileBrowse(vol, path, ..) = self.screen.clone() {
             (vol, path)
         } else {
             return;
@@ -205,7 +216,7 @@ impl FuncFile {
             self.failed_to_open = true;
         }
         while entries.is_err() {
-            if let Screen::FileBrowse(_, ref mut cur) = self.screen {
+            if let Screen::FileBrowse(_, ref mut cur, ..) = self.screen {
                 *cur = path.parent().unwrap().to_path_buf();
                 entries = std::fs::read_dir(cur.clone());
             }
@@ -232,8 +243,9 @@ impl FuncFile {
 
                     if btn.clicked() {
                         if path.is_dir() {
-                            if let Screen::FileBrowse(_, ref mut cur) = self.screen {
+                            if let Screen::FileBrowse(_, ref mut cur, ref mut cached) = self.screen {
                                 *cur = path.clone();
+                                *cached = cur.clone().to_str().unwrap().to_string();
                             }
                         } else {
                             open::that_detached(path.to_str().unwrap())
