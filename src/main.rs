@@ -9,6 +9,7 @@ use crate::screen::Screen;
 use eframe::egui::{self, FontId};
 use eframe::egui::{Id, PointerButton, PopupCloseBehavior, Ui, Window};
 use eframe::epaint::{TextureHandle, Vec2};
+use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use sysinfo::Disks;
@@ -25,14 +26,18 @@ fn main() {
 
 struct FuncFile {
     screen: Screen,
+    last_name: String,
+    cached_name: String,
     failed_to_delete: bool,
     failed_to_open: bool,
     failed_to_read_copied_file: bool,
+    create_popup: bool,
     dir_tex: Option<TextureHandle>,
     file_tex: Option<TextureHandle>,
     paste_tex: Option<TextureHandle>,
     back_tex: Option<TextureHandle>,
     drive_sel_tex: Option<TextureHandle>,
+    create_tex: Option<TextureHandle>,
 }
 
 impl FuncFile {
@@ -44,14 +49,18 @@ impl FuncFile {
         }
         Self {
             screen: Screen::DriveSel(volumes, Arc::new(Mutex::new(disks))),
+            last_name: "".to_owned(),
+            cached_name: "".to_owned(),
             failed_to_delete: false,
             failed_to_open: false,
             failed_to_read_copied_file: false,
+            create_popup: false,
             dir_tex: None,
             file_tex: None,
             paste_tex: None,
             back_tex: None,
             drive_sel_tex: None,
+            create_tex: None,
         }
     }
     fn refresh_drive_sel(&mut self) {
@@ -113,11 +122,7 @@ impl FuncFile {
             }
         }
     }
-    fn file_browse(&mut self, ctx: &egui::Context, ui: &mut Ui) {
-        if let Screen::DriveSel(..) = self.screen.clone() {
-            return;
-        }
-
+    fn windows(&mut self, ctx: &egui::Context, ui: &mut Ui) {
         if self.failed_to_delete {
             Window::new("Error")
                 .collapsible(false)
@@ -156,10 +161,38 @@ impl FuncFile {
                     }
                 });
         }
+    }
+    fn file_browse(&mut self, ctx: &egui::Context, ui: &mut Ui) {
+        if let Screen::DriveSel(..) = self.screen.clone() {
+            return;
+        }
+
+
+        self.windows(ctx, ui);
+
 
         let mut back = false;
         ui.horizontal(|ui| {
             if let Screen::FileBrowse(_, ref mut cur, ref mut cached) = self.screen {
+
+                if self.create_popup {
+                    Window::new("Create")
+                        .collapsible(false)
+                        .resizable(false)
+                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                        .show(ctx, |ui| {
+                            ui.label("Enter a name for this item!");
+
+                            ui.text_edit_singleline(&mut self.cached_name);
+
+                            if ui.button("OK").clicked() {
+                                File::create(cur.join(self.cached_name.clone())).expect("Failed to create file");
+                                self.cached_name = "".to_owned();
+                                self.create_popup = false;
+                            }
+                        });
+                }
+
                 if cur.parent().is_some() {
                     if ui.add(egui::Button::image(&self.back_tex.clone().unwrap())).clicked() {
                         *cur = cur.parent().unwrap().to_path_buf();
@@ -191,14 +224,18 @@ impl FuncFile {
                     back = true;
                     return;
                 }
+                if ui.add(egui::Button::image(&self.create_tex.clone().unwrap())).clicked() {
+                    self.create_popup = true;
+                }
+
                 let edit = ui.add(
                     egui::TextEdit::singleline(cached)
-                        .min_size(Vec2 { 
-                            x: ui.available_width(), 
-                            y: ui.available_height() 
-                        })
-                        .font(FontId::new(20.0, egui::FontFamily::Proportional))
-                    );
+                    .min_size(Vec2 { 
+                        x: ui.available_width(), 
+                        y: ui.available_height() 
+                    })
+                    .font(FontId::new(20.0, egui::FontFamily::Proportional))
+                );
                 if edit.lost_focus() {
                     let cached_path = Path::new(cached);
                     if cached_path.is_dir() {
@@ -312,6 +349,7 @@ impl eframe::App for FuncFile {
         screen::load_image!(self, "paste.png", "paste_image", paste_tex, ctx);
         screen::load_image!(self, "back.png", "back_image", back_tex, ctx);
         screen::load_image!(self, "drive_sel.png", "drive_sel_image", drive_sel_tex, ctx);
+        screen::load_image!(self, "create.png", "create_image", create_tex, ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.drive_sel(ctx, ui);
