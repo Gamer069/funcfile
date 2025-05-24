@@ -1,12 +1,15 @@
+#![feature(decl_macro)]
+
+mod clip;
 mod fs;
 mod screen;
 
 use crate::fs::Volume;
 use crate::screen::Screen;
-use eframe::egui;
-use eframe::egui::{Id, Image, PointerButton, PopupCloseBehavior, TextureOptions, Ui, Window};
-use eframe::epaint::{TextureHandle, TextureId, Vec2};
-use image::imageops::FilterType;
+use eframe::egui::{self, Button, TextEdit};
+use eframe::egui::{Id, PointerButton, PopupCloseBehavior, Ui, Window};
+use eframe::epaint::{TextureHandle, Vec2};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use sysinfo::Disks;
 
@@ -24,8 +27,12 @@ struct FuncFile {
     screen: Screen,
     failed_to_delete: bool,
     failed_to_open: bool,
+    failed_to_read_copied_file: bool,
     dir_tex: Option<TextureHandle>,
     file_tex: Option<TextureHandle>,
+    paste_tex: Option<TextureHandle>,
+    back_tex: Option<TextureHandle>,
+    drive_sel_tex: Option<TextureHandle>,
 }
 
 impl FuncFile {
@@ -35,14 +42,17 @@ impl FuncFile {
         for disk in &disks {
             volumes.push(Volume::from(disk));
         }
-        let out = Self {
+        Self {
             screen: Screen::DriveSel(volumes, Arc::new(Mutex::new(disks))),
             failed_to_delete: false,
             failed_to_open: false,
+            failed_to_read_copied_file: false,
             dir_tex: None,
             file_tex: None,
-        };
-        out
+            paste_tex: None,
+            back_tex: None,
+            drive_sel_tex: None,
+        }
     }
     fn refresh_drive_sel(&mut self) {
         match self.screen {
@@ -134,15 +144,43 @@ impl FuncFile {
                 });
         }
 
+        if self.failed_to_read_copied_file {
+            Window::new("Error")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("Failed to paste file/directory. Failed to read file.");
+                    if ui.button("OK").clicked() {
+                        self.failed_to_read_copied_file = false;
+                    }
+                });
+        }
+
         let mut back = false;
         ui.horizontal(|ui| {
             if let Screen::FileBrowse(_, ref mut cur) = self.screen {
                 if cur.parent().is_some() {
-                    if ui.button("..\\").clicked() {
+                    if ui.add(Button::image(&self.back_tex.clone().unwrap())).clicked() {
                         *cur = cur.parent().unwrap().to_path_buf();
                     }
                 }
-                if ui.button("Back to drive sel").clicked() {
+                if ui.add(Button::image(&self.paste_tex.clone().unwrap())).clicked() {
+                    let copied_path = clip::paste();
+                    let copied_path = copied_path.trim().to_string();
+                    println!("{}", copied_path);
+                    let exists = std::fs::exists(copied_path.clone());
+                    if exists.is_err() || exists.is_ok_and(|x| {
+                        println!("{}", x);
+                        !x
+                    }) {
+                        self.failed_to_read_copied_file = true;
+                    } else {
+                        std::fs::copy(copied_path.clone(), cur.join(Path::new(&copied_path.clone()).file_name().unwrap())).expect("Failed to paste file");
+                    }
+                }
+
+                if ui.add(Button::image(&self.drive_sel_tex.clone().unwrap())).clicked() {
                     let disks = Disks::new_with_refreshed_list();
                     let mut volumes = vec![];
                     for disk in &disks {
@@ -217,16 +255,26 @@ impl FuncFile {
                         |ui| {
                             if ui.button("Delete").clicked() {
                                 if path.is_file() {
-                                    ui.close_menu();
+                                    ui.memory_mut(|mem| {
+                                        mem.close_popup();
+                                    });
                                     if std::fs::remove_file(path.clone()).is_err() {
                                         self.failed_to_delete = true;
                                     }
                                 } else {
-                                    ui.close_menu();
+                                    ui.memory_mut(|mem| {
+                                        mem.close_popup();
+                                    });
                                     if std::fs::remove_dir_all(path.clone()).is_err() {
                                         self.failed_to_delete = true;
                                     }
                                 }
+                            }
+                            if ui.button("Copy").clicked() {
+                                ui.memory_mut(|mem| {
+                                    mem.close_popup();
+                                });
+                                clip::copy(path.to_str().unwrap().to_string());
                             }
                         },
                     );
@@ -238,48 +286,13 @@ impl FuncFile {
 impl eframe::App for FuncFile {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.refresh_drive_sel();
-        if self.dir_tex.is_none() {
-            let dir_bytes = std::fs::read(
-                std::env::current_exe()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .join("dir.png"),
-            )
-            .expect("Failed to read dir image bytes");
-            let img = image::load_from_memory(&dir_bytes)
-                .expect("Failed to load dir image")
-                .resize(50, 50, FilterType::Nearest);
-            let rgba = img.to_rgba8();
-            let size = [rgba.width() as usize, rgba.height() as usize];
-            let pixels = rgba.as_flat_samples();
 
-            let color_image = egui::ColorImage::from_rgba_premultiplied(size, pixels.as_slice());
+        screen::load_image!(self, "dir.png", "dir_image", dir_tex, ctx);
+        screen::load_image!(self, "file.png", "file_image", file_tex, ctx);
+        screen::load_image!(self, "paste.png", "paste_image", paste_tex, ctx);
+        screen::load_image!(self, "back.png", "back_image", back_tex, ctx);
+        screen::load_image!(self, "drive_sel.png", "drive_sel_image", drive_sel_tex, ctx);
 
-            self.dir_tex =
-                Some(ctx.load_texture("dir_image", color_image, TextureOptions::default()));
-        }
-        if self.file_tex.is_none() {
-            let file_bytes = std::fs::read(
-                std::env::current_exe()
-                    .unwrap()
-                    .parent()
-                    .unwrap()
-                    .join("file.png"),
-            )
-            .expect("Failed to read file image bytes");
-            let img = image::load_from_memory(&file_bytes)
-                .expect("Failed to load file image")
-                .resize(50, 50, FilterType::Nearest);
-            let rgba = img.to_rgba8();
-            let size = [rgba.width() as usize, rgba.height() as usize];
-            let pixels = rgba.as_flat_samples();
-
-            let color_image = egui::ColorImage::from_rgba_premultiplied(size, pixels.as_slice());
-
-            self.file_tex =
-                Some(ctx.load_texture("file_image", color_image, TextureOptions::default()));
-        }
         egui::CentralPanel::default().show(ctx, |ui| {
             self.drive_sel(ctx, ui);
             self.file_browse(ctx, ui);

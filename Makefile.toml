@@ -6,17 +6,26 @@ args = ["build", "--release"]
 [tasks.dev]
 description = "Build funcfile (dev)"
 command = "cargo"
-args = ["build", ""]
+args = ["build"]
+
+[tasks.copy_dev]
+description = "Copy necessary files"
+script_runner = "@duckscript"
+script = '''
+glob_cp ./hires/* ./target/debug/
+'''
 
 [tasks.copy]
-description = "Copy neccessary files"
-command = "cp"
-args = ["hires/*", "target/debug/"]
+description = "Copy necessary files"
+script_runner = "@duckscript"
+script = '''
+glob_cp ./hires/* ./target/release/
+'''
 
 [tasks.all]
-description = "Build funcfile and copy neccessary files"
+description = "Build funcfile and copy necessary files"
 dependencies = ["build", "copy"]
 
 [tasks.all_dev]
-description = "Build funcfile (dev) and copy neccessary files"
-dependencies = ["dev", "copy"]
+description = "Build funcfile (dev) and copy necessary files"
+dependencies = ["dev", "copy_dev"]
