@@ -311,7 +311,7 @@ impl FuncFile {
                         &self.file_tex.clone().unwrap()
                     };
                     let btn = ui.add(
-                        egui::Button::image_and_text(img, format!("{}", path.display()))
+                        egui::Button::image_and_text(img, format!("{}", path.file_name().unwrap().display()))
                             .min_size(Vec2::new(ui.available_width(), 0.0)),
                     );
 
